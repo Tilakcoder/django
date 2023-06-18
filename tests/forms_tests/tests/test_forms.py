@@ -42,9 +42,8 @@ from django.forms.utils import ErrorList
 from django.http import QueryDict
 from django.template import Context, Template
 from django.test import SimpleTestCase
-from django.test.utils import isolate_lru_cache, override_settings
+from django.test.utils import override_settings
 from django.utils.datastructures import MultiValueDict
-from django.utils.deprecation import RemovedInDjango50Warning
 from django.utils.safestring import mark_safe
 
 from . import jinja2_tests
@@ -130,9 +129,12 @@ class FormsTestCase(SimpleTestCase):
 
         self.assertHTMLEqual(
             "\n".join(form_output),
-            """<input type="text" name="first_name" value="John" id="id_first_name" required>
-<input type="text" name="last_name" value="Lennon" id="id_last_name" required>
-<input type="text" name="birthday" value="1940-10-9" id="id_birthday" required>""",
+            '<input type="text" name="first_name" value="John" id="id_first_name" '
+            "required>"
+            '<input type="text" name="last_name" value="Lennon" id="id_last_name" '
+            "required>"
+            '<input type="text" name="birthday" value="1940-10-9" id="id_birthday" '
+            "required>",
         )
 
         form_output = []
@@ -893,10 +895,12 @@ class FormsTestCase(SimpleTestCase):
         f = BeatleForm(auto_id=False)
         self.assertHTMLEqual(
             "\n".join(str(bf) for bf in f["name"]),
-            """<label><input type="radio" name="name" value="john" required> John</label>
-<label><input type="radio" name="name" value="paul" required> Paul</label>
-<label><input type="radio" name="name" value="george" required> George</label>
-<label><input type="radio" name="name" value="ringo" required> Ringo</label>""",
+            '<label><input type="radio" name="name" value="john" required> John</label>'
+            '<label><input type="radio" name="name" value="paul" required> Paul</label>'
+            '<label><input type="radio" name="name" value="george" required> George'
+            "</label>"
+            '<label><input type="radio" name="name" value="ringo" required> Ringo'
+            "</label>",
         )
         self.assertHTMLEqual(
             "\n".join("<div>%s</div>" % bf for bf in f["name"]),
@@ -2229,8 +2233,10 @@ class FormsTestCase(SimpleTestCase):
         p = UserRegistration(auto_id=False)
         self.assertHTMLEqual(
             p.as_ul(),
-            """<li>Username: <input type="text" name="username" maxlength="10" required></li>
-<li>Password: <input type="password" name="password" maxlength="10" required></li>""",
+            '<li>Username: <input type="text" name="username" maxlength="10" required>'
+            "</li>"
+            '<li>Password: <input type="password" name="password" maxlength="10" '
+            "required></li>",
         )
 
     def test_specifying_labels(self):
@@ -2320,8 +2326,9 @@ class FormsTestCase(SimpleTestCase):
         p = UserRegistration(auto_id=False)
         self.assertHTMLEqual(
             p.as_ul(),
-            """<li>Username: <input type="text" name="username" maxlength="10" required></li>
-<li>Password: <input type="password" name="password" required></li>""",
+            '<li>Username: <input type="text" name="username" maxlength="10" required>'
+            "</li>"
+            '<li>Password: <input type="password" name="password" required></li>',
         )
         p = UserRegistration(auto_id="id_%s")
         self.assertHTMLEqual(
@@ -2945,11 +2952,12 @@ Options: <select multiple name="options" required>
         p = UserRegistration({"username": "foo"}, auto_id=False)
         self.assertHTMLEqual(
             p.as_ul(),
-            """<li>Username: <input type="text" name="username" value="foo" maxlength="10" required>
-<span class="helptext">e.g., user@example.com</span></li>
-<li><ul class="errorlist"><li>This field is required.</li></ul>
-Password: <input type="password" name="password" required>
-<span class="helptext">Wählen Sie mit Bedacht.</span></li>""",
+            '<li>Username: <input type="text" name="username" value="foo" '
+            'maxlength="10" required>'
+            '<span class="helptext">e.g., user@example.com</span></li>'
+            '<li><ul class="errorlist"><li>This field is required.</li></ul>'
+            'Password: <input type="password" name="password" required>'
+            '<span class="helptext">Wählen Sie mit Bedacht.</span></li>',
         )
 
         # help_text is not displayed for hidden fields. It can be used for documentation
@@ -4570,6 +4578,22 @@ Password: <input type="password" name="password" required>
             '<legend number="9999" for="id_first_name">First name:</legend>',
         )
 
+    def test_remove_cached_field(self):
+        class TestForm(Form):
+            name = CharField(max_length=10)
+
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                # Populate fields cache.
+                [field for field in self]
+                # Removed cached field.
+                del self.fields["name"]
+
+        f = TestForm({"name": "abcde"})
+
+        with self.assertRaises(KeyError):
+            f["name"]
+
 
 @jinja2_tests
 class Jinja2FormsTestCase(FormsTestCase):
@@ -4578,6 +4602,7 @@ class Jinja2FormsTestCase(FormsTestCase):
 
 class CustomRenderer(DjangoTemplates):
     form_template_name = "forms_tests/form_snippet.html"
+    field_template_name = "forms_tests/custom_field.html"
 
 
 class RendererTests(SimpleTestCase):
@@ -4985,6 +5010,28 @@ class TemplateTests(SimpleTestCase):
             "('username', 'adrian')]",
         )
 
+    def test_custom_field_template(self):
+        class MyForm(Form):
+            first_name = CharField(template_name="forms_tests/custom_field.html")
+
+        f = MyForm()
+        self.assertHTMLEqual(
+            f.render(),
+            '<div><label for="id_first_name">First name:</label><p>Custom Field<p>'
+            '<input type="text" name="first_name" required id="id_first_name"></div>',
+        )
+
+    def test_custom_field_render_template(self):
+        class MyForm(Form):
+            first_name = CharField()
+
+        f = MyForm()
+        self.assertHTMLEqual(
+            f["first_name"].render(template_name="forms_tests/custom_field.html"),
+            '<label for="id_first_name">First name:</label><p>Custom Field<p>'
+            '<input type="text" name="first_name" required id="id_first_name">',
+        )
+
 
 class OverrideTests(SimpleTestCase):
     @override_settings(FORM_RENDERER="forms_tests.tests.test_forms.CustomRenderer")
@@ -4998,6 +5045,22 @@ class OverrideTests(SimpleTestCase):
         expected = """
         <div class="fieldWrapper"><label for="id_first_name">First name:</label>
         <input type="text" name="first_name" required id="id_first_name"></div>
+        """
+        self.assertHTMLEqual(html, expected)
+        get_default_renderer.cache_clear()
+
+    @override_settings(FORM_RENDERER="forms_tests.tests.test_forms.CustomRenderer")
+    def test_custom_renderer_field_template_name(self):
+        class Person(Form):
+            first_name = CharField()
+
+        get_default_renderer.cache_clear()
+        t = Template("{{ form.first_name.as_field_group }}")
+        html = t.render(Context({"form": Person()}))
+        expected = """
+        <label for="id_first_name">First name:</label>
+        <p>Custom Field<p>
+        <input type="text" name="first_name" required id="id_first_name">
         """
         self.assertHTMLEqual(html, expected)
         get_default_renderer.cache_clear()
@@ -5059,16 +5122,3 @@ class OverrideTests(SimpleTestCase):
             '<label for="id_name" class="required">Name:</label>'
             '<legend class="required">Language:</legend>',
         )
-
-
-class DeprecationTests(SimpleTestCase):
-    def test_warning(self):
-        from django.forms.utils import DEFAULT_TEMPLATE_DEPRECATION_MSG
-
-        with isolate_lru_cache(get_default_renderer), self.settings(
-            FORM_RENDERER="django.forms.renderers.DjangoTemplates"
-        ), self.assertRaisesMessage(
-            RemovedInDjango50Warning, DEFAULT_TEMPLATE_DEPRECATION_MSG
-        ):
-            form = Person()
-            str(form)

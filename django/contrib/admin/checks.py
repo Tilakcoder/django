@@ -727,8 +727,7 @@ class BaseModelAdminChecks:
             # this format would be nice, but it's a little fiddly).
             return []
         else:
-            if field_name.startswith("-"):
-                field_name = field_name[1:]
+            field_name = field_name.removeprefix("-")
             if field_name == "pk":
                 return []
             try:
@@ -772,10 +771,11 @@ class BaseModelAdminChecks:
             except FieldDoesNotExist:
                 return [
                     checks.Error(
-                        "The value of '%s' is not a callable, an attribute of "
-                        "'%s', or an attribute of '%s'."
+                        "The value of '%s' refers to '%s', which is not a callable, "
+                        "an attribute of '%s', or an attribute of '%s'."
                         % (
                             label,
+                            field_name,
                             obj.__class__.__name__,
                             obj.model._meta.label,
                         ),
@@ -917,10 +917,14 @@ class ModelAdminChecks(BaseModelAdminChecks):
                         id="admin.E108",
                     )
                 ]
-        if isinstance(field, models.ManyToManyField):
+        if (
+            getattr(field, "is_relation", False)
+            and (field.many_to_many or field.one_to_many)
+        ) or (getattr(field, "rel", None) and field.rel.field.many_to_one):
             return [
                 checks.Error(
-                    "The value of '%s' must not be a ManyToManyField." % label,
+                    f"The value of '{label}' must not be a many-to-many field or a "
+                    f"reverse foreign key.",
                     obj=obj.__class__,
                     id="admin.E109",
                 )

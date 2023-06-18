@@ -110,6 +110,10 @@ class Supplier(Place):
     customers = models.ManyToManyField(Restaurant, related_name="provider")
 
 
+class CustomSupplier(Supplier):
+    pass
+
+
 class ParkingLot(Place):
     # An explicit link to the parent (we can control the attribute name).
     parent = models.OneToOneField(
@@ -181,4 +185,24 @@ class Child(Parent):
 
 
 class GrandChild(Child):
+    pass
+
+
+class CommonAncestor(models.Model):
+    id = models.IntegerField(primary_key=True, default=1)
+
+
+class FirstParent(CommonAncestor):
+    first_ancestor = models.OneToOneField(
+        CommonAncestor, models.CASCADE, primary_key=True, parent_link=True
+    )
+
+
+class SecondParent(CommonAncestor):
+    second_ancestor = models.OneToOneField(
+        CommonAncestor, models.CASCADE, primary_key=True, parent_link=True
+    )
+
+
+class CommonChild(FirstParent, SecondParent):
     pass

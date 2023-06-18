@@ -108,12 +108,12 @@ def get_resolver(urlconf=None):
     return _get_cached_resolver(urlconf)
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _get_cached_resolver(urlconf=None):
     return URLResolver(RegexPattern(r"^/"), urlconf)
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def get_ns_resolver(ns_pattern, resolver, converters):
     # Build a namespaced resolver for the given parent URLconf pattern.
     # This makes it possible to have captured parameters in the parent
@@ -346,7 +346,7 @@ class LocalePrefixPattern:
     @property
     def regex(self):
         # This is only used by reverse() and cached in _reverse_dict.
-        return re.compile(self.language_prefix)
+        return re.compile(re.escape(self.language_prefix))
 
     @property
     def language_prefix(self):
@@ -359,7 +359,7 @@ class LocalePrefixPattern:
     def match(self, path):
         language_prefix = self.language_prefix
         if path.startswith(language_prefix):
-            return path[len(language_prefix) :], (), {}
+            return path.removeprefix(language_prefix), (), {}
         return None
 
     def check(self):
@@ -437,6 +437,21 @@ class URLPattern:
                 extra_kwargs=self.default_args,
             )
 
+    @cached_property
+    def lookup_str(self):
+        """
+        A string that identifies the view (e.g. 'path.to.view_function' or
+        'path.to.ClassBasedView').
+        """
+        callback = self.callback
+        if isinstance(callback, functools.partial):
+            callback = callback.func
+        if hasattr(callback, "view_class"):
+            callback = callback.view_class
+        elif not hasattr(callback, "__name__"):
+            return callback.__module__ + "." + callback.__class__.__name__
+        return callback.__module__ + "." + callback.__qualname__
+
 
 class URLResolver:
     def __init__(
@@ -454,6 +469,9 @@ class URLResolver:
         self._reverse_dict = {}
         self._namespace_dict = {}
         self._app_dict = {}
+        # set of dotted paths to all functions and classes that are used in
+        # urlpatterns
+        self._callback_strs = set()
         self._populated = False
         self._local = Local()
 
@@ -524,9 +542,9 @@ class URLResolver:
             language_code = get_language()
             for url_pattern in reversed(self.url_patterns):
                 p_pattern = url_pattern.pattern.regex.pattern
-                if p_pattern.startswith("^"):
-                    p_pattern = p_pattern[1:]
+                p_pattern = p_pattern.removeprefix("^")
                 if isinstance(url_pattern, URLPattern):
+                    self._callback_strs.add(url_pattern.lookup_str)
                     bits = normalize(url_pattern.pattern.regex.pattern)
                     lookups.appendlist(
                         url_pattern.callback,
@@ -585,6 +603,7 @@ class URLResolver:
                             namespaces[namespace] = (p_pattern + prefix, sub_pattern)
                         for app_name, namespace_list in url_pattern.app_dict.items():
                             apps.setdefault(app_name, []).extend(namespace_list)
+                    self._callback_strs.update(url_pattern._callback_strs)
             self._namespace_dict[language_code] = namespaces
             self._app_dict[language_code] = apps
             self._reverse_dict[language_code] = lookups
@@ -625,9 +644,13 @@ class URLResolver:
         """Join two routes, without the starting ^ in the second route."""
         if not route1:
             return route2
-        if route2.startswith("^"):
-            route2 = route2[1:]
+        route2 = route2.removeprefix("^")
         return route1 + route2
+
+    def _is_callback(self, name):
+        if not self._populated:
+            self._populate()
+        return name in self._callback_strs
 
     def resolve(self, path):
         path = str(path)  # path may be a reverse_lazy object
